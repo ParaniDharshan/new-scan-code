@@ -3,7 +3,9 @@ import GlyphPattern from '../components/GlyphPattern.jsx'
 import { binaryToText, glyphMap, reverseGlyphMap, textToBinary } from '../utils/glyphCode.js'
 import { getMatrixSize } from '../utils/glyphLayout.js'
 import { exportGlyphPng } from '../utils/glyphPng.js'
+import { apiRequest } from '../utils/api.js'
 import overviewImage from '../assets/glyph-code-overview.png'
+import QRCode from 'qrcode'
 
 function GlyphGeneratorPage() {
   const [message, setMessage] = useState('')
@@ -15,19 +17,16 @@ function GlyphGeneratorPage() {
   const [saveStatus, setSaveStatus] = useState('')
   const [saveError, setSaveError] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [qrMessage, setQrMessage] = useState('')
+  const [qrImage, setQrImage] = useState('')
+  const [qrError, setQrError] = useState('')
+  const [qrRequest, setQrRequest] = useState(0)
   const generatedMessage = useRef('')
   const glyphCanvas = useRef(null)
 
   useEffect(() => {
     let active = true
-    fetch('/api/codes')
-      .then(async (response) => {
-        if (!response.ok) {
-          const result = await response.json()
-          throw new Error(result.error || 'Saved patterns could not be loaded.')
-        }
-        return response.json()
-      })
+    apiRequest('/api/codes')
       .then((codes) => {
         if (active) setSavedCodes(codes)
       })
@@ -42,6 +41,34 @@ function GlyphGeneratorPage() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (!qrMessage) return undefined
+
+    let active = true
+    QRCode.toDataURL(qrMessage, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      width: 320,
+      color: { dark: '#102f43', light: '#ffffff' },
+    })
+      .then((url) => {
+        if (active) {
+          setQrImage(url)
+          setQrError('')
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setQrImage('')
+          setQrError(error.message || 'A scannable QR code could not be generated.')
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [qrMessage, qrRequest])
 
   const matrixSize = getMatrixSize(glyphs.length)
   const matrixInfo = matrixSize
@@ -67,6 +94,10 @@ function GlyphGeneratorPage() {
     }
 
     generatedMessage.current = message
+    setQrImage('')
+    setQrError('')
+    setQrMessage(message)
+    setQrRequest((request) => request + 1)
     setGlyphs(nextGlyphs)
     setGlyphString(JSON.stringify(nextGlyphs))
     setDecodedText('')
@@ -85,13 +116,11 @@ function GlyphGeneratorPage() {
     setSaveStatus('')
     setSaveError(false)
     try {
-      const response = await fetch('/api/codes', {
+      const result = await apiRequest('/api/codes', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ message: generatedMessage.current, glyphs }),
       })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'The pattern could not be saved.')
       setSavedCodes((codes) => [result, ...codes])
       setSaveStatus('Pattern saved.')
     } catch (error) {
@@ -144,6 +173,14 @@ function GlyphGeneratorPage() {
     } catch (error) {
       setGeneratorError(error.message || 'The pattern could not be exported as a PNG.')
     }
+  }
+
+  function downloadQrPng() {
+    if (!qrImage) return
+    const link = document.createElement('a')
+    link.download = 'glyph-code-qr.png'
+    link.href = qrImage
+    link.click()
   }
 
   return (
@@ -206,6 +243,29 @@ function GlyphGeneratorPage() {
         <GlyphPattern ref={glyphCanvas} glyphs={glyphs} />
         {decodedText && <p className="decoded-text" aria-live="polite">{decodedText}</p>}
       </section>
+      {qrMessage && (
+        <section className="qr-output-card" aria-label="Scannable QR code">
+          <div>
+            <h2>Camera-scannable QR code</h2>
+            <p className="hint">
+              The glyph pattern above is a custom format, not a standard QR code. Scan this QR with
+              the camera scanner or download it as a PNG.
+            </p>
+          </div>
+          {qrImage ? (
+            <>
+              <img src={qrImage} alt={`Standard QR code containing: ${qrMessage}`} />
+              <button type="button" className="secondary-button" onClick={downloadQrPng}>
+                Download scannable QR PNG
+              </button>
+            </>
+          ) : (
+            <p className={qrError ? 'message error' : 'message'} role={qrError ? 'alert' : 'status'}>
+              {qrError || 'Creating scannable QR code…'}
+            </p>
+          )}
+        </section>
+      )}
       {saveStatus && (
         <p className={saveError ? 'message error' : 'message'} role="status">
           {saveStatus}

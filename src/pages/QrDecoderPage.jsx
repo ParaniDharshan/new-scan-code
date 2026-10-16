@@ -159,7 +159,8 @@ function QrDecoderPage() {
       <p className="eyebrow">ON-DEVICE DECODING</p>
       <h1>QR &amp; Glyph Code Decoder</h1>
       <p className="subtitle">
-        Upload an image to read a standard QR code or a PNG exported by the Glyph Code Generator.
+        Scan standard QR codes with your camera, or upload an image to read a standard QR code or a
+        PNG exported by the Glyph Code Generator.
       </p>
       <section className="upload-box">
         <label htmlFor="imageFile"><strong>Select a QR or glyph pattern image</strong></label>
@@ -179,7 +180,11 @@ function QrDecoderPage() {
             Stop scanning
           </button>
         )}
-        <p className="hint">Camera access requires permission and a secure connection (HTTPS or localhost).</p>
+        <p className="hint">
+          Camera scanning reads standard QR codes. To scan a generated message, use its
+          camera-scannable QR code; custom Glyph Code patterns can be decoded by uploading their
+          exported PNG. Camera access requires HTTPS or localhost.
+        </p>
         {cameraStream && (
           <video
             ref={videoRef}

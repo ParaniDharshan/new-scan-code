@@ -170,6 +170,41 @@
   background: #fbfcfd;
 }
 
+.qr-output-card {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 20px;
+  border: 1px solid #d9e3eb;
+  border-radius: 12px;
+  background: #fbfcfd;
+  text-align: center;
+}
+
+.qr-output-card h2 {
+  margin: 0;
+  color: #16364c;
+  font-size: 16px;
+  text-transform: uppercase;
+}
+
+.qr-output-card .hint {
+  max-width: 560px;
+}
+
+.qr-output-card img {
+  display: block;
+  width: min(100%, 320px);
+  height: auto;
+  image-rendering: pixelated;
+  background: #fff;
+}
+
+.qr-output-card button {
+  margin-top: 4px;
+}
+
 .output-heading {
   display: flex;
   flex-wrap: wrap;

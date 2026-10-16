@@ -1,16 +1,36 @@
-# React + Vite
+# Glyph Code
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Glyph Code is a React app for generating visual glyph patterns and decoding QR or glyph images in the browser. The backend saves generated patterns in a local SQLite database; image decoding stays on the device.
 
-Currently, two official plugins are available:
+## Requirements
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 22.13 or newer (the backend uses Node's built-in SQLite module)
+- npm
 
-## React Compiler
+## Run locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```sh
+npm install
+npm run dev
+```
 
-## Expanding the ESLint configuration
+Open the URL printed by Vite. The development server proxies `/api` requests to the backend on port 3001. The first run creates `server/data/glyph-code.sqlite`.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Use **Save pattern** in the generator to store the current message and glyphs. Saved patterns appear below the generator and can be loaded again. The database is local to this machine and has no user accounts.
+
+## Production
+
+```sh
+npm run build
+npm start
+```
+
+The backend serves the built frontend and API on port 3001. Set `PORT` to change the port, `HOST` to change the bind address (defaults to `127.0.0.1`), or `DATABASE_PATH` to choose another SQLite file.
+
+## API
+
+- `GET /api/health` - backend health check
+- `GET /api/codes` - list saved patterns, newest first
+- `POST /api/codes` - save a pattern with a JSON body containing `message` and `glyphs`
+
+The API validates that the glyph sequence represents the supplied message before saving it.

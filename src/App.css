@@ -146,6 +146,11 @@
   background: #d8e4ec;
 }
 
+.container button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .message {
   margin: 16px 0 0;
   color: #526c7e;
@@ -231,6 +236,74 @@
   font-size: 16px;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.saved-codes {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid #d9e3eb;
+  border-radius: 12px;
+  background: #fbfcfd;
+}
+
+.saved-codes-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.saved-codes-heading h2 {
+  margin: 0;
+  color: #16364c;
+  font-size: 16px;
+  text-transform: uppercase;
+}
+
+.saved-codes-heading span {
+  color: #718596;
+  font-size: 13px;
+}
+
+.saved-codes ul {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved-codes li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid #e1e8ee;
+}
+
+.saved-codes li > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.saved-codes li strong {
+  overflow: hidden;
+  color: #18384d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-codes li time {
+  color: #718596;
+  font-size: 12px;
+}
+
+.saved-codes li button {
+  flex: 0 0 auto;
+}
+
+.saved-codes .hint {
+  margin-bottom: 0;
 }
 
 .upload-box {
@@ -386,6 +459,10 @@
     padding: 14px 8px;
   }
 
+  .saved-codes {
+    padding: 14px;
+  }
+
   .glyph-canvas {
     padding: 7px;
   }
@@ -407,6 +484,7 @@
   .container form,
   .container > .field-label,
   .container > textarea,
+  .saved-codes,
   .message,
   .reference,
   .app-shell footer,

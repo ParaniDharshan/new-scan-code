@@ -1,535 +1,198 @@
-# Fully Loaded Cost (FLC) - Direct Cost Module Database Design
+# Mermaid ER Diagram
 
-## Overview
+```mermaid
+erDiagram
 
-This document describes the database structure for the Direct Cost Module of the Fully Loaded Cost (FLC) application.
+    COMPANY ||--o{ DEPARTMENTS : has
+    COMPANY ||--o{ EMPLOYEES : owns
 
-The design currently consists of the following collections:
+    DEPARTMENTS ||--o{ EMPLOYEES : contains
 
-```text
-company
-departments
-employees
+    EMPLOYEES ||--o{ SALARY : has
+    EMPLOYEES ||--o{ LIFE_INSURANCE : has
+    EMPLOYEES ||--o{ HEALTH_INSURANCE : has
+    EMPLOYEES ||--o{ PROFESSIONAL_CERTIFICATION_REIMBURSEMENT : has
+    EMPLOYEES ||--o{ HOLIDAY_BONUS : has
+    EMPLOYEES ||--o{ DER : assigned
+    EMPLOYEES ||--o{ SOFTWARE_ACCESS : uses
 
-salary
-life_insurance
-health_insurance
-professional_certification_reimbursement
-holiday_bonus
+    COMPANY {
+        ObjectId comp_id PK
+        string companycode
+        string companyname
+        string registeredname
+        string currency
+        boolean isactive
+        datetime created_at
+        datetime updated_at
+    }
 
-dedicated_employee_resource (DER)
-dedicated_employee_resource_software_access
+    DEPARTMENTS {
+        ObjectId dept_id PK
+        ObjectId comp_id FK
+        string deptcode
+        string deptname
+        boolean isactive
+        string created_by
+        datetime created_at
+        string updated_by
+        datetime updated_at
+    }
+
+    EMPLOYEES {
+        ObjectId emp_id PK
+        ObjectId comp_id FK
+        ObjectId dept_id FK
+        string emp_code
+        string emp_name
+        string email
+        string designation
+        string status
+        datetime created_at
+        datetime updated_at
+    }
+
+    SALARY {
+        ObjectId sal_id PK
+        ObjectId emp_id FK
+        date effective_from
+        number annual_salary
+        number monthly_salary
+        string remarks
+        string status
+    }
+
+    LIFE_INSURANCE {
+        ObjectId li_id PK
+        ObjectId emp_id FK
+        string policy_no
+        string provider
+        number annual_amount
+        number effective_year
+    }
+
+    HEALTH_INSURANCE {
+        ObjectId hi_id PK
+        ObjectId emp_id FK
+        string policy_no
+        string provider
+        number annual_amount
+        number effective_year
+    }
+
+    PROFESSIONAL_CERTIFICATION_REIMBURSEMENT {
+        ObjectId pcr_id PK
+        ObjectId emp_id FK
+        string certification_name
+        string provider
+        number amount
+        date reimbursement_date
+        number effective_year
+    }
+
+    HOLIDAY_BONUS {
+        ObjectId hb_id PK
+        ObjectId emp_id FK
+        number amount
+        number effective_year
+    }
+
+    DER {
+        ObjectId der_id PK
+        ObjectId emp_id FK
+        string asset_name
+        string asset_type
+        number purchase_cost
+        number depreciation_rate
+        number scrap_percentage
+        number annual_depreciation
+        date purchase_date
+    }
+
+    SOFTWARE_ACCESS {
+        ObjectId des_id PK
+        ObjectId emp_id FK
+        string software_name
+        string software_type
+        number annual_cost
+        number effective_year
+    }
 ```
 
 ---
 
-# High Level ER Diagram
+# Relationship Matrix
 
-```text
-┌─────────────────┐
-│     COMPANY     │
-└────────┬────────┘
-         │
-         │ 1 : M
-         ▼
-┌─────────────────┐
-│   DEPARTMENTS   │
-└────────┬────────┘
-         │
-         │ 1 : M
-         ▼
-┌─────────────────┐
-│    EMPLOYEES    │
-└────────┬────────┘
-         │
-         │ 1 : M
-         ├──────────────────────────────┐
-         │                              │
-         ▼                              ▼
+| Parent | Child | Cardinality |
+|----------|----------|----------|
+| Company | Departments | 1 : Many |
+| Company | Employees | 1 : Many |
+| Department | Employees | 1 : Many |
+| Employee | Salary | 1 : Many |
+| Employee | Life Insurance | 1 : Many |
+| Employee | Health Insurance | 1 : Many |
+| Employee | Professional Certification Reimbursement | 1 : Many |
+| Employee | Holiday Bonus | 1 : Many |
+| Employee | DER Assets | 1 : Many |
+| Employee | Software Access | 1 : Many |
 
- ┌──────────────┐               ┌──────────────┐
- │    SALARY    │               │ LIFE INSURANCE│
- └──────────────┘               └──────────────┘
+---
 
-         │
-         │
-         ├──────────────────────────────┐
-         │                              │
-         ▼                              ▼
+# Direct Cost Data Flow
 
-┌────────────────┐          ┌─────────────────────────┐
-│HEALTH INSURANCE│          │ PROFESSIONAL CERTIFICATION │
-└────────────────┘          └─────────────────────────┘
+```mermaid
+flowchart TD
 
-         │
-         │
-         ├──────────────────────────────┐
-         │                              │
-         ▼                              ▼
+    A[Company]
 
-┌────────────────┐        ┌─────────────────────────┐
-│ HOLIDAY BONUS  │        │ DEDICATED EMPLOYEE      │
-└────────────────┘        │ RESOURCE (DER)          │
-                          └─────────────────────────┘
+    A --> B[Departments]
 
-                                      │
-                                      │
-                                      ▼
+    B --> C[Employees]
 
-                        ┌────────────────────────────┐
-                        │ SOFTWARE ACCESS            │
-                        └────────────────────────────┘
+    C --> D[Salary]
+    C --> E[Life Insurance]
+    C --> F[Health Insurance]
+    C --> G[Professional Certification]
+    C --> H[Holiday Bonus]
+    C --> I[DER Depreciation]
+    C --> J[Software Access]
+
+    D --> K[Direct Labour]
+    E --> K
+    F --> K
+    G --> K
+    H --> K
+
+    I --> L[Direct Material]
+    J --> L
+
+    K --> M[Total Direct Cost]
+
+    L --> M
 ```
 
 ---
 
-# Collection Relationship Flow
-
-```text
-Company
-  │
-  ├── Departments
-  │       │
-  │       └── Employees
-  │               │
-  │               ├── Salary
-  │               ├── Life Insurance
-  │               ├── Health Insurance
-  │               ├── Holiday Bonus
-  │               ├── Certification Reimbursement
-  │               ├── DER Assets
-  │               └── Software Access
-```
-
----
-
-# 1. COMPANY
-
-## Purpose
-
-Stores organization details.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "companyCode": "KOPL",
-  "companyName": "KOPL Pvt Ltd",
-  "registeredName": "KOPL Private Limited",
-  "currency": "INR",
-  "isActive": true,
-  "createdAt": Date,
-  "updatedAt": Date
-}
-```
-
-## Relationships
-
-```text
-Company
-  └── Departments
-  └── Employees
-```
-
-## Referenced By
-
-```text
-Departments.compId
-Employees.compId
-```
-
----
-
-# 2. DEPARTMENTS
-
-## Purpose
-
-Stores organizational departments.
-
-Example:
-
-```text
-RG  -> Revenue Generation
-AD  -> Administrative
-RE  -> Reserve
-```
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "compId": ObjectId,
-  "deptCode": "RG",
-  "deptName": "Revenue Generation",
-  "isActive": true,
-  "createdBy": "Admin",
-  "createdAt": Date,
-  "updatedBy": "Admin",
-  "updatedAt": Date
-}
-```
-
-## Relationships
-
-```text
-Company
-   │
-   └── Departments
-             │
-             └── Employees
-```
-
-## Referenced By
-
-```text
-Employees.deptId
-```
-
----
-
-# 3. EMPLOYEES
-
-## Purpose
-
-Stores employee master information.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "compId": ObjectId,
-  "deptId": ObjectId,
-  "empCode": "EMP001",
-  "empName": "Saravana Kumar",
-  "email": "saravana@company.com",
-  "designation": "Software Engineer",
-  "status": "ACTIVE",
-  "createdAt": Date,
-  "updatedAt": Date
-}
-```
-
-## Relationships
-
-```text
-Employee
-   │
-   ├── Salary
-   ├── Life Insurance
-   ├── Health Insurance
-   ├── Professional Certification
-   ├── Holiday Bonus
-   ├── DER
-   └── Software Access
-```
-
----
-
-# 4. SALARY
-
-## Purpose
-
-Stores annual and monthly salary details.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "empId": ObjectId,
-  "effectiveFrom": "2026-01-01",
-  "annualSalary": 300000,
-  "monthlySalary": 25000,
-  "remarks": "",
-  "status": "ACTIVE",
-  "createdBy": "Admin",
-  "createdAt": Date,
-  "updatedBy": "Admin",
-  "updatedAt": Date
-}
-```
-
-## Reference
-
-```text
-empId -> Employees._id
-```
-
----
-
-# 5. LIFE INSURANCE
-
-## Purpose
-
-Stores employee life insurance details.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "empId": ObjectId,
-  "policyNo": "LIC001",
-  "provider": "LIC",
-  "annualAmount": 6453,
-  "effectiveYear": 2026,
-  "createdBy": "Admin",
-  "createdAt": Date,
-  "updatedBy": "Admin",
-  "updatedAt": Date
-}
-```
-
-## Reference
-
-```text
-empId -> Employees._id
-```
-
----
-
-# 6. HEALTH INSURANCE
-
-## Purpose
-
-Stores employee health insurance cost.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "empId": ObjectId,
-  "policyNo": "HI001",
-  "provider": "Star Health",
-  "annualAmount": 12000,
-  "effectiveYear": 2026,
-  "createdBy": "Admin",
-  "createdAt": Date,
-  "updatedBy": "Admin",
-  "updatedAt": Date
-}
-```
-
-## Reference
-
-```text
-empId -> Employees._id
-```
-
----
-
-# 7. PROFESSIONAL CERTIFICATION REIMBURSEMENT
-
-## Purpose
-
-Stores employee certification reimbursements.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "empId": ObjectId,
-  "certificationName": "Azure Fundamentals",
-  "provider": "Microsoft",
-  "amount": 4500,
-  "reimbursementDate": "2026-06-01",
-  "effectiveYear": 2026
-}
-```
-
-## Reference
-
-```text
-empId -> Employees._id
-```
-
----
-
-# 8. HOLIDAY BONUS
-
-## Purpose
-
-Stores annual holiday bonus.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "empId": ObjectId,
-  "amount": 6000,
-  "effectiveYear": 2026
-}
-```
-
-## Reference
-
-```text
-empId -> Employees._id
-```
-
----
-
-# 9. DEDICATED EMPLOYEE RESOURCE (DER)
-
-## Purpose
-
-Stores employee-specific assets and depreciation.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "empId": ObjectId,
-  "assetName": "Dell Latitude Laptop",
-  "assetType": "Laptop",
-  "purchaseCost": 67757,
-  "depreciationRate": 27,
-  "scrapPercentage": 20,
-  "annualDepreciation": 18294.39,
-  "purchaseDate": "2026-01-01",
-  "createdBy": "Admin",
-  "createdAt": Date,
-  "updatedBy": "Admin",
-  "updatedAt": Date
-}
-```
-
-## Reference
-
-```text
-empId -> Employees._id
-```
-
----
-
-# 10. DEDICATED EMPLOYEE RESOURCE SOFTWARE ACCESS
-
-## Purpose
-
-Stores employee specific software access costs.
-
-## Collection
-
-```json
-{
-  "_id": ObjectId,
-  "empId": ObjectId,
-  "softwareName": "Microsoft 365",
-  "softwareType": "EMAIL_LICENSE",
-  "annualCost": 3600,
-  "effectiveYear": 2026
-}
-```
-
-## Reference
-
-```text
-empId -> Employees._id
-```
-
----
-
-# Complete Foreign Key Map
-
-```text
-COMPANY
-│
-├── compId
-│
-├──────────────► DEPARTMENTS.compId
-│
-└──────────────► EMPLOYEES.compId
-
-
-DEPARTMENTS
-│
-└── deptId
-     │
-     └────────► EMPLOYEES.deptId
-
-
-EMPLOYEES
-│
-├── empId
-│
-├──────────────► SALARY.empId
-├──────────────► LIFE_INSURANCE.empId
-├──────────────► HEALTH_INSURANCE.empId
-├──────────────► PROFESSIONAL_CERTIFICATION.empId
-├──────────────► HOLIDAY_BONUS.empId
-├──────────────► DER.empId
-└──────────────► SOFTWARE_ACCESS.empId
-```
-
----
-
-# Direct Cost Calculation Flow
-
-```text
-Employee
-   │
-   ├── Salary
-   │
-   ├── Life Insurance
-   │
-   ├── Health Insurance
-   │
-   ├── Professional Certification
-   │
-   ├── Holiday Bonus
-   │
-   ├── DER Depreciation
-   │
-   └── Software Access
-          │
-          ▼
-
-Total Direct Cost
-
-(Direct Labour)
-+
-(Direct Material)
-
-=
-
-Fully Loaded Cost Module Input
-```
-
-## Direct Labour
-
-```text
-Salary
-+
-Life Insurance
-+
-Health Insurance
-+
-Holiday Bonus
-+
-Professional Certification
-```
-
-## Direct Material
-
-```text
-DER Depreciation
-+
-Software Access
-```
-
-## Final Formula
-
-```text
-Total Direct Cost
-=
-Direct Labour
-+
-Direct Material
+# Employee Cost Aggregation View
+
+```mermaid
+flowchart LR
+
+    EMP[Employee]
+
+    EMP --> SAL[Salary]
+    EMP --> LI[Life Insurance]
+    EMP --> HI[Health Insurance]
+    EMP --> PCR[Certification]
+    EMP --> HB[Holiday Bonus]
+    EMP --> DER[DER Assets]
+    EMP --> SA[Software Access]
+
+    SAL --> DC[Direct Cost]
+    LI --> DC
+    HI --> DC
+    PCR --> DC
+    HB --> DC
+    DER --> DC
+    SA --> DC
 ```

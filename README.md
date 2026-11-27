@@ -1,151 +1,257 @@
-# FLC360 Application Workflow
+# FLC360 Schema Review and Reuse Assessment
 
-## 1. What the application does
+## 1. Purpose and scope
 
-FLC360 is a cost-management dashboard for organizing employee and department information, importing fixed-asset data, calculating cost allocation and fully loaded cost (FLC), and reviewing or exporting results.
+This document reviews:
 
-The project has two parts:
+1. The supplied FLC module model snapshot under `src/modules/fully-loaded-cost/models`.
+2. The supplied wider application model snapshot under `models`.
+3. The models currently defined in this workspace's `server/src/server.js` and the documented FLC360 workflow.
 
-- **Client:** A React single-page application built and served by Vite. Its screens, navigation, sample records, and much of the displayed dashboard data are defined in the client.
-- **Server:** An Express API that provides calculation, dashboard, master-data, and fixed-asset upload endpoints. MongoDB is used for fixed-asset records and is also the configured persistence layer for the server's data models.
+The two supplied model listings are pasted snapshots, not model files currently present in this workspace. The active workspace has a smaller set of inline Mongoose schemas in `server/src/server.js`. Keep that distinction in mind when planning a migration or reuse.
 
-The interface is an administrative dashboard rather than a public-facing site. There is no sign-in flow in the current client. The profile name and role shown in the header are display values, not proof of an authenticated session.
+This is a schema and data-flow assessment only. It does not implement models or change application behavior.
 
-## 2. Starting the project
+## 2. Executive conclusion
 
-### Prerequisites
+The proposed FLC module provides a useful starting set for employee-specific direct costs and fixed-asset depreciation. It does not yet describe the complete FLC calculation lifecycle: indirect cost pools, workbook import and mapping, working-hour history, allocation rules, and immutable calculation results are not fully represented.
 
-1. Install a supported version of Node.js and npm.
-2. Install the npm dependencies separately in the `server` and `client` project folders.
-3. Start MongoDB locally, or configure the server to use an available MongoDB instance. The example server environment file documents the expected database connection setting. Fixed-asset reads and uploads require a working database connection.
+The wider application schema already contains useful foundations:
 
-### Start the server
+- Company, user, role, and permission concepts.
+- Component and subcomponent masters with flags identifying records relevant to Fully Loaded Cost.
+- Fixed-asset category and asset-type masters.
+- Operational-expense report structures that demonstrate source-row tracking, mapping status, unmatched-row resolution, and report totals.
 
-From the `server` folder, run the package's development script. The API listens on port 5000 by default. It attempts to connect to the configured MongoDB database before starting; if the connection fails, it still starts in a reduced, database-disconnected mode.
+Reuse these concepts rather than creating duplicate master data. Do not use the operational-expense report as the FLC calculation itself: it has a different business purpose and does not model employee-level allocation or FLC output.
 
-### Start the client
+Before production use, establish one canonical company, department, team, employee, fixed-asset catalog, and component master. Then add the FLC-specific records needed to import costs, apply approved allocation rules, and preserve each calculated report version.
 
-From the `client` folder, run the Vite development script. Open the local client address printed by Vite, normally `http://localhost:5173`.
+## 3. Supplied FLC models: what each group represents
 
-The Vite development server forwards requests under the API path to the server on port 5000. This lets the client call the API using same-origin relative URLs during local development.
+The FLC snapshot contains 20 model files. They form these related areas:
 
-### What appears at startup
+| Area | Models | Role |
+|---|---|---|
+| Organization | `DirectCostDepartment`, `DirectCostTeam`, `DirectCostEmployee` | Company-scoped FLC department, team, and employee records. Employees reference department and optionally team. |
+| Employee direct-cost inputs | `EmployeeSalary`, `HolidayBonus`, `CertificationReimbursement` | Effective-dated salary history and year-specific bonus/certification amounts for an employee. |
+| Insurance | `InsuranceCategory`, `InsuranceItem`, `InsurancePremium` | Insurance category and policy details, followed by annual premium history. Policies may be employee-specific or shared because the employee reference is optional. |
+| Resources | `ResourceCategory`, `ResourceItem`, `ResourceAssignment` | Resource catalog and dated employee assignments. |
+| Software | `SoftwareCategory`, `SoftwareItem` | Software category and license/subscription details; an item can optionally reference an employee. |
+| Fixed assets | `DepreciationConfiguration`, `FixedAssetRegister`, `FixedAssetAssignment`, `FixedAssetValue`, `FixedAssetDepreciation` | Depreciation settings, acquired asset records, assignment history, valuation history, and calculated depreciation by period. |
+| FLC report | `FullyLoadedCostReport` | A month-specific report with imported rows and/or structured sections, totals, approval state, and audit users. |
 
-The browser loads the client's HTML entry page, which mounts the React application into the page. The application initializes its navigation on **Dashboard**, applies the shared theme and layout, and displays the side navigation, top bar, and selected screen. Employee, department, team, and catalog data are initialized from client-side sample records.
+### 3.1 Organization and employee costs
 
-There is no required login or setup wizard in the current application. The dashboard can be viewed without MongoDB, but database-backed asset features will report that the database is unavailable.
+The FLC department, team, and employee schemas give the cost records employee and organizational identities to reference. Salary, holiday bonus, and professional-certification reimbursement are separate records, which supports audit history and effective-year reporting better than storing all amounts directly on the employee.
 
-## 3. End-to-end business workflow
+Insurance, resources, and software are split into catalogs and employee-linked records. This is a useful normalized structure: categories describe types of costs, items describe policies/assets/licenses, and premium or assignment records describe the financial or assignment history.
 
-The intended operational flow is:
+These are input records, not a complete monthly FLC ledger. The schemas need clearly defined period semantics and rules for turning a premium, subscription, reimbursement, or salary into a cost for a specific report month or financial year.
 
-1. **Choose the financial period.** Review the financial year and the FLC version that reports should represent. The client currently uses sample financial-year and version values in several screens.
-2. **Maintain organizational masters.** Create or review departments, teams, and employees. Departments classify people as revenue-generating, administrative, or reserve; teams belong to departments; employees can be assigned to both. These relationships are inputs to allocation and analysis.
-3. **Prepare the three cost input files.** The calculation workflow uses a Direct Cost file, an Indirect Cost file, and a Fixed Asset Cost file. Each file supplies cost data for its respective cost type. The files should use agreed identifiers and component details so their records can be matched against the relevant components and subcomponents configured in the database.
-4. **Upload and map the files.** Upload the three files through Data Management. The system should validate and analyze each file, match its cost records to database component and subcomponent definitions, and resolve the appropriate employee, department, financial year, or other allocation dimensions. Unmatched or invalid rows should be reported for correction rather than silently included.
-5. **Populate the FLC template.** After a successful match, the system should place each input value into the corresponding component and subcomponent in the Data Analysis FLC template. Direct costs, indirect cost pools, and fixed-asset costs should remain identifiable so reviewers can trace template values back to their source file and matched database definition.
-6. **Calculate and review allocation.** The system should use the populated template and the applicable allocation assumptions to calculate the respective cost allocations and fully loaded costs. Review the component totals, employee-level allocations, and FLC results in Data Analysis before exporting. In the current implementation, the dashboard and Ratio Calculation actions submit fixed sample assumptions to a simplified API; they do not yet calculate from all three uploaded files.
-7. **Approve and export.** Review the analysis and use the report download controls to export the current report or both report views as CSV. Reports is another entry point to the same analysis/report content.
-8. **Track versions and communicate results.** Version Management and dashboard indicators represent the active and archived calculation versions. Analytics screens provide summary views for cost composition, department comparisons, and trends.
-9. **Finish the reporting cycle.** A business cycle is complete when the figures for the chosen financial year and version have been reviewed and the required reports have been exported. The application itself does not have a dedicated “close workflow” or sign-out process implemented. Stop the client and server development processes when finished; the MongoDB service is independent.
+### 3.2 Fixed assets and depreciation
 
-## 4. How data moves through the application
+The asset register represents acquired assets; the valuation records allow values to change over time; assignment history records who or which department used an asset; and depreciation records store opening WDV, depreciation, accumulated depreciation, and closing WDV for a period.
 
-- **Navigation and screen state:** The side navigation changes the active screen within the same React application; it does not load separate web pages or require a full browser navigation. The top search menu can navigate to matching pages or to the Employee screen for a matching employee.
-- **Client-side records:** Department, team, employee, resource, software, and insurance records are held in React state and initialized with sample data. Changes to these records are not currently saved to MongoDB and generally return to their initial sample values after a full page reload.
-- **Intended cost-file flow:** Direct Cost, Indirect Cost, and Fixed Asset Cost files are analyzed and matched to component/subcomponent definitions in the database. The matched values populate the corresponding positions in the Data Analysis FLC template, which is then used for allocation and FLC calculations. The file-to-database mapping must be traceable and invalid or unmatched records must be surfaced for correction.
-- **Current API requests:** The client calls the Express API for a simplified FLC calculation, fixed-asset workbook upload, and fixed-asset category/depreciation data. The server responds with JSON; the client displays results or relevant error messages. It does not currently expose upload-and-mapping workflows for the Direct Cost and Indirect Cost files.
-- **Current database-backed assets:** Fixed assets are stored in MongoDB. The server validates the fixed-asset workbook type and size, required headers, values, and duplicate asset codes within the workbook before writing records. A successful import updates or creates records by asset code. This existing fixed-asset import is not yet a unified three-file FLC template pipeline.
-- **CSV reports:** Report downloads are assembled in the browser and saved as CSV files. They are not generated or stored by the server.
-- **Illustrative data:** Several chart values, list rows, user details, and cost inputs are currently sample or hard-coded values. Treat them as demonstration data, not verified business results.
+This separation is a good foundation for traceability. The depreciation calculation should also record the exact configuration and inputs used, and a uniqueness rule should prevent duplicate asset-period calculations. The current snapshot does not show those safeguards.
 
-## 5. Pages and why each matters
+### 3.3 FLC report
 
-### Dashboard
+`FullyLoadedCostReport` can store original spreadsheet-like rows (`headers`, `rows`, row numbers), structured sections, a total, and draft/approved status. This can be useful for retaining a report-shaped view.
 
-The landing and monitoring screen. It summarizes financial year, active version, employee count, and average FLC per hour, and shows cost composition, cost trends, department distribution, and employee status. The **Run FLC Calculation** action calls the calculation API and displays its returned ratio and assumptions.
+As written, it is not a robust calculation-run record:
 
-**Importance:** Gives administrators a quick overview and a starting point for initiating or navigating the calculation workflow. Several displayed metrics and chart series are currently sample values.
+- It has a unique `reportMonth`, so it permits only one report per month across the collection. It has no company or version in that unique key.
+- It has no explicit financial-year, calculation-version, input-batch, or allocation-rule references.
+- Generic `Mixed` row data is flexible but weakly validated and difficult to query reliably.
+- Structured rows contain only a name, amount, and estimated flag; they do not capture employee-level results, allocation basis, source references, or formula inputs.
+- A single `sourceFileName` does not represent multiple Direct Cost, Indirect Cost, and Fixed Asset input workbooks.
 
-### Administration
+Use it, at most, as a report presentation or imported workbook snapshot after adding suitable ownership and version identity. Do not treat it alone as the auditable source of truth for FLC calculations.
 
-- **Financial Year:** Lists financial periods, their start and end dates, status, and associated version. The screen also presents an action to add a period.
-  - **Importance:** Defines the reporting period so costs and reports can be interpreted against the correct year. The current list and add action are demonstration UI rather than a persistent financial-year API workflow.
-- **User Management:** Shows example users, roles, departments, and statuses, with an add-user action.
-  - **Importance:** Represents where access would be managed in a complete application. User and authentication models exist on the server, but this screen is not connected to a working login or user-management API.
+## 4. Wider application schema: what is reusable
 
-### Masters
+| Existing area | Reuse assessment for FLC |
+|---|---|
+| `CompanyMaster` | Reuse as the company identity if this is the same application and database. FLC records should reference the same company key and consistently name the field (`companyId` or the established application convention). |
+| `User`, `Role`, `Permission` | Reuse for created/updated/approved-by references if these are the active authentication models. The FLC snapshot's audit fields already point to `User`, but references must target the actual shared model. |
+| `Component` and `SubComponent` | Strong candidates for the shared cost taxonomy. Their `isFullyLoadedCost` flags, codes, names, category references, bill requirements, active state, and display order can identify and order FLC-relevant components. Add FLC-specific allocation configuration separately if these shared masters serve multiple modules. |
+| `FixedAssetCategoryMaster` and `FixedAssetMaster` | Reuse as category/type catalogs. The master has category, description, aliases, and active state, which can help map uploaded asset descriptions. These are not individual purchased assets and do not replace the FLC register, valuation, assignment, or depreciation-period records. |
+| Operational-expense reports and rows | Reuse the design pattern for source imports: preserve source amounts, mapped component IDs, match status, source ledger information, manual edits, display order, unmatched rows, resolution reasons, and report status. This is especially relevant to workbook/Tally reconciliation. |
+| `OperationalExpenseTotals` and fixed-cost sections | They demonstrate storing cost totals and supporting detail, but their existing totals and allocations belong to operational-expense reporting. Do not assume their definitions or amounts equal FLC direct, variable, fixed, or semi-variable costs. |
+| Currency and financial-category masters | Reuse where they are canonical and applicable. Define one currency and financial-period convention for FLC rather than silently mixing amount formats or month/year keys. |
+| Petty-cash, cashflow, invoice, and client-allocation schemas | Generally not FLC data models. They may offer implementation patterns, but their transaction meaning and allocation targets differ. |
 
-- **Department:** Maintains department code, name, department type, and status.
-  - **Importance:** Department type is important for separating revenue, administrative, and reserve populations during cost allocation.
-- **Team:** Maintains teams and their parent department.
-  - **Importance:** Organizes employees below departments and supports the people structure used elsewhere in the interface.
-- **Employee:** Maintains employee identity, department, team, joining details, working hours, status, and related assignments.
-  - **Importance:** Employees are the central allocation units; their type and working hours affect cost assignment and per-hour FLC.
-- **Resource Items:** Catalogs physical resources and allows assignment to employees.
-  - **Importance:** Represents employee-specific resource costs such as hardware or equipment.
-- **Software:** Catalogs software or licenses and allows assignment to employees.
-  - **Importance:** Represents software costs associated with employees.
-- **Insurance:** Catalogs insurance information and allows assignment to employees.
-  - **Importance:** Represents employee-related insurance costs.
+The shared `Component`/`SubComponent` masters are particularly valuable for consistent names and import mapping. Their module flags alone do not define FLC calculation behavior: the FLC process still needs to know whether a component is employee-direct, shared variable, fixed depreciation, administrative semi-variable, and how it is allocated.
 
-Department, team, employee, resource, software, and insurance editing is handled in the browser's current state. These screens provide create, edit, delete, search, or grouping interactions as appropriate, but their changes are not persisted to the server in the current implementation.
+## 5. Important gaps and risks to resolve
 
-### Data Management
+### 5.1 Duplicate masters and inconsistent relationships
 
-- **Upload Center:** The intended workflow accepts three inputs: Direct Cost, Indirect Cost, and Fixed Asset Cost files. The current screen only implements fixed-asset Excel upload; Direct Cost and Indirect Cost upload cards are marked as coming soon. The implemented fixed-asset workbook must include asset code, asset name, category, purchase cost, purchase date, and useful life; residual value is optional. Only Excel workbooks are accepted, with a 10 MB upload limit.
-  - **Importance:** This is intended to be the entry point for all source cost data. The complete workflow should validate each file, match records to database components and subcomponents, and make the mapped values available to the analysis template. At present, only the fixed-asset import and its depreciation/category summaries are connected to MongoDB.
-- **Data Analysis:** Displays cost allocation detail and fully loaded cost views for the selected financial year, including employee-level and cost-pool information. In the intended workflow, mapped input values from all three cost files populate the appropriate component and subcomponent rows in the FLC template before calculation. The page can download the current view or a combined report.
-  - **Importance:** This is the main review stage between cost-file processing and report delivery. It should make the source-to-template mapping and resulting calculations clear, so reviewers can verify how direct costs, indirect pools, fixed-asset depreciation, and administrative allocation contribute to FLC. The current page uses sample/directly configured values and is not yet populated from all three uploaded files.
+The FLC snapshot introduces its own `DirectCostDepartment`, `DirectCostTeam`, and `DirectCostEmployee` while the wider application already has department, team, and employee concepts. Its fixed-asset register and depreciation records also overlap in purpose (but not lifecycle) with the wider application's fixed-asset category and asset-type masters. The supplied wider application snapshot does not show backend resource or software catalog models; those FLC catalogs appear to be new domain masters based on the provided evidence.
 
-### FLC Engine
+Maintaining parallel versions risks the same employee, department, or asset having different IDs and names in different modules. Choose one canonical master for each shared concept and reference it from FLC records. Only create a separate FLC entity if it has a genuinely different lifecycle and an explicit link to the canonical record. Resource and software catalog models can remain FLC-specific unless another module needs to own those catalogs.
 
-- **Ratio Calculation:** Presents department types, working hours, employee counts, and ratio weights, with an action to calculate.
-  - **Importance:** Makes the allocation assumptions visible before interpreting cost distribution. The present action submits fixed assumptions to the API; the table is illustrative.
-- **FLC Processing:** Lists calculation stages such as direct cost allocation, variable cost allocation, depreciation allocation, and administrative apportionment.
-  - **Importance:** Communicates the sequence and status of processing needed to produce fully loaded costs. Its listed processing history is sample content; the current action invokes the simplified calculation API.
-- **Version Management:** Shows calculation versions, financial year, generation date, employee count, status, and owner, and offers a create-version action.
-  - **Importance:** Helps compare the current calculation with prior snapshots and identify which version is active. The page is not currently connected to a version persistence API.
+The FLC department has no `departmentType`, even though the business calculation distinguishes Revenue, Administrative, and Reserve. That classification must come from the canonical Department record or be added to the single authoritative department model. Do not copy it inconsistently across FLC employee rows.
 
-### Reports
+The FLC employee has both a department and a team reference, but the FLC team model does not itself reference a department. The wider application team relationship does. Prefer the existing department-to-team relationship and validate that an employee's selected team belongs to their department.
 
-The Reports screen presents the report-oriented version of Data Analysis, including cost allocation and fully loaded cost views with CSV download options.
+### 5.2 Company scoping and uniqueness
 
-**Importance:** Provides a focused place to review and export results after calculation. It currently uses the same analysis logic and source data as Data Analysis rather than a separate reporting service.
+Several FLC records carry a company reference, but their code indexes are globally unique (for example employee, department, team, and asset codes). If codes are only required to be unique within a company, use company-scoped uniqueness conceptually: company plus code. Also apply company filtering consistently to every read and write.
 
-### Analytics
+The FLC snapshot uses both `companyId` and `compId` for a company reference. Standardize the name and target model. References to company-owned category/configuration records should also be checked for matching company ownership.
 
-- **Cost Breakdown:** Summarizes direct cost, indirect cost pools, percentages, monthly averages, and trends.
-  - **Importance:** Shows the overall mix of costs and helps identify which components contribute most to the total.
-- **Department Analysis:** Compares employee counts, average FLC per hour, monthly cost, and cost share by department.
-  - **Importance:** Helps managers compare cost distribution across organizational groups.
-- **Cost Trends:** Shows cost and average-FLC values across reporting periods.
-  - **Importance:** Helps identify changes over time. Current values are illustrative rather than dynamically generated from saved calculation history.
+### 5.3 Period, history, and money semantics
 
-These analytics screens currently use sample rows and provide export-style actions; they are not yet backed by a dedicated analytics API.
+The models mix `effectiveYear`, `financialYear`, `reportMonth` (`YYYY-MM`), and date ranges. Define which costs are annual, monthly, or transaction-dated, and how they are prorated into a report period. A financial-year report and a monthly report are not interchangeable.
 
-### Settings
+`EmployeeSalary` stores both annual and monthly salary, which can disagree. Choose a canonical amount and pay frequency, or define validation that guarantees the two values agree. Effective date ranges should not overlap for the same employee unless an explicit rule permits it.
 
-Displays example organization and report settings such as standard working hours, currency, and cost precision.
+All amounts use JavaScript/Mongoose `Number` in the supplied FLC models. For financial calculations, define currency, decimal precision, rounding stage, and whether values are stored as decimal amounts or integer minor units. Keep calculations from repeatedly rounding intermediate allocations.
 
-**Importance:** Represents the place for organization-wide calculation and display preferences. The current settings page is a generic demonstration screen; settings are not applied as persistent configuration.
+### 5.4 Fixed-asset rules
 
-## 6. Calculation and reporting notes
+The depreciation configuration contains both percentage fields and useful-life/residual-value fields, but the model does not define permitted methods, valid ranges, how those settings are selected for an asset, or how overlapping effective configurations are prevented. It references a company rather than a fixed-asset category, while the wider application has an asset-category master.
 
-- The calculation API receives revenue hours, administrative hours, and employee counts and returns a simplified ratio and allocation value. The dashboard and FLC Engine currently send preset sample values.
-- The intended calculation should use the mapped values in the FLC template, with each amount associated with its database-defined component and subcomponent before applying the appropriate allocation method.
-- In the current implementation, Data Analysis has separate client-side cost-allocation logic. It treats configured employee costs as direct costs, distributes sample variable-cost pools using a fixed one-ninth allocation ratio, adds depreciation pools, and allocates administrative costs across revenue employees. These values are not yet populated by analyzing and matching all three input files.
-- The final employee FLC view presents direct cost per hour, two indirect components per hour, total indirect cost per hour, and fully loaded cost per hour and month.
-- These calculation paths are not yet a unified, persisted calculation pipeline. In particular, the server's ratio response and the detailed client-side Data Analysis calculations are distinct.
-- Downloaded reports are CSV files generated from the data currently shown in the client. A download is not the same as saving or approving a calculation version on the server.
+Clarify whether an asset's register value, value history, or purchase cost is the depreciation basis. Assignment validation should ensure exactly the intended employee or department is set for the selected `assignedToType`. Depreciation records should be unique for the appropriate asset and financial period and should preserve the configuration used at calculation time.
 
-## 7. Current implementation boundaries
+### 5.5 Missing FLC calculation and import lifecycle
 
-- The frontend is a prototype-style single-page application. Many screens show sample values or generic rows and are not backed by server endpoints.
-- The complete three-file workflow—Direct Cost, Indirect Cost, and Fixed Asset Cost validation, database component/subcomponent matching, FLC-template population, and calculation from the populated template—is the intended process but is not fully implemented. Currently, only fixed-asset Excel import has a working upload endpoint; direct and indirect cost upload and mapping are not implemented.
-- The dashboard figures, user identity, trends, financial-year options, and version history are sample content.
-- There is no implemented login, role enforcement, or sign-out workflow, despite user-related models and role labels in the project.
-- Client-side master and catalog edits are not durable across reloads.
-- Fixed-asset storage and depreciation/category summaries are the principal MongoDB-backed data flow.
-- If MongoDB is unavailable, the server still provides endpoints that do not require the database, but asset upload and database-backed asset queries return an unavailable error.
-- The configured client development proxy is for local development. A production deployment would need its own client hosting, API routing, database configuration, and security setup.
+The supplied FLC model set has useful cost inputs, but does not show dedicated structures for:
+
+1. Import batches for the Direct Cost, Indirect Cost, and Fixed Asset workbooks, each with period, company, file metadata, uploader, validation state, and source identity.
+2. Row-level mapping/reconciliation for FLC inputs, including unresolved rows and the reason a source line was mapped, excluded, or manually added.
+3. Shared indirect/variable cost pools and their allocation basis for a report period.
+4. A durable FLC calculation run/version that captures the exact inputs, working hours, allocation ratio, depreciation results, assumptions, and employee-level output used for approval.
+
+The current workspace does have simple inline `EmployeeWorkingHours` and audit schemas, and a simpler fixed-asset import model. Those are useful starting points, but the supplied FLC snapshot does not include working hours. Ensure there is only one canonical employee-hours store keyed by employee and reporting period; avoid storing a detached employee code if a stable employee reference is available.
+
+## 6. Schema concepts to pin before implementation
+
+These are business/schema decisions that should be confirmed before treating the model set as final:
+
+1. **Canonical ownership:** Is the FLC module in the same database and tenant boundary as `CompanyMaster`, `Department`, `Team`, `Employee`, and `User`? Which exact models are authoritative?
+2. **Department classification:** Is Revenue/Administrative/Reserve a property of the existing Department master? Are there other department types?
+3. **Calculation period:** Are users calculating by month, financial year, or both? How do annual salary, annual insurance, subscription frequency, and asset depreciation become a monthly amount?
+4. **Allocation policy:** Which shared costs are allocated to Revenue, Administrative, and Reserve employees, and what is each allocation basis? Confirm the exact annual/monthly treatment and rounding for semi-variable administrative cost.
+5. **Calculation versioning:** Can a company create multiple draft or approved calculations for the same month/year? If yes, report uniqueness must include company and version/run identity, not only month.
+6. **Import retention:** Must original workbooks be stored, or are file name/checksum plus normalized rows sufficient? How long must source files and row-level provenance be retained?
+7. **Fixed-asset accounting:** Which depreciation method and effective configuration apply to each asset, and can historical calculations be rerun or only superseded by a new version?
+
+## 7. Recommended conceptual data flow
+
+1. Resolve employees, departments, teams, components, subcomponents, and asset categories against the shared masters.
+2. Store each workbook as a period- and company-scoped import batch. Retain row-level source information and explicit mapping/reconciliation status.
+3. Resolve direct employee costs, shared indirect cost pools, and fixed-asset depreciation to the appropriate FLC component and allocation method.
+4. Use the existing employee-hours concept, made period-aware and tied to the canonical employee record.
+5. Create a versioned FLC calculation snapshot that records its input references and calculation assumptions, then stores employee-level direct, indirect, fixed, semi-variable, per-hour, and per-month results.
+6. Approve the calculation snapshot. Reports and CSV/Excel exports should be generated from that approved snapshot so historical outputs do not silently change when a master or source record is edited later.
+
+## 8. Final recommendation
+
+### Reuse
+
+- The wider application's company and user identity models, if they are the active shared models.
+- Component and subcomponent masters for FLC cost names, codes, ordering, and module eligibility.
+- Fixed-asset category and asset-type masters for classification and mapping.
+- Operational-expense import/reconciliation patterns for source rows, matching, manual resolution, and audit.
+- The current workspace's working-hours and fixed-asset import concepts, after aligning them with canonical employee, company, and period keys.
+
+### Keep FLC-specific
+
+- Salary, bonus, certification, insurance premium, resource/software assignment, asset register/value/assignment, and depreciation-period concepts are FLC-specific inputs or histories. They can be used after their ownership, period, and validation rules are tightened.
+- FLC allocation rules, cost pools, and calculation snapshots must express FLC business semantics; operational-expense allocation totals are not a substitute.
+
+### Add or finalize before production
+
+Prioritize a period/company-scoped cost import and reconciliation model, an indirect-cost-pool/allocation-rule model, and a versioned FLC calculation snapshot with employee-level results. Reconcile duplicated organization and asset masters before creating production records. Tighten compound uniqueness, effective-date validation, currency/rounding, and depreciation period integrity.
+
+In short: the existing application provides valuable identity, taxonomy, asset-catalog, and reconciliation building blocks. The FLC models provide a useful input foundation. Neither set alone currently defines a complete, traceable, versioned FLC calculation pipeline.
+
+## 9. Comparison with the application currently in this workspace
+
+The current backend is a prototype with inline Mongoose schemas in `server/src/server.js`. It is not the same model tree as the supplied wider-application snapshot.
+
+| Current application area | What exists now | FLC implication |
+|---|---|---|
+| Company and identity | `User` exists, but the current workspace does not define `CompanyMaster` or company ownership on its department, employee, or asset records. | Do not assume the pasted `CompanyMaster` is active in this app. If multiple companies will use this deployment, add company ownership to the canonical records and scope indexes/queries by company. |
+| Departments, teams, employees | Basic `Department`, `Team`, and `Employee` schemas exist. `Department.departmentType` already supports Revenue, Administrative, and Reserve. Team and employee records reference departments; employees also reference teams. | Reuse these as the starting organizational models. Do not add a separate FLC department/employee model unless it links to these canonical records. Add validation that an employee's team belongs to their department. |
+| Working hours | `EmployeeWorkingHours` stores an employee code, financial year, and hours (0–744), with a unique employee/year index. An audit schema and API routes exist, but the client working-hours screen currently keeps its values in application state and does not call those routes. | A second working-hours model is not needed for the current yearly input. Connect the client to the existing persistence API. If monthly hours are required for monthly reports, extend the period key intentionally; also consider replacing the detached employee code with a reference to the canonical Employee. |
+| Fixed assets | `AssetCategory`, `DepreciationConfiguration`, and `FixedAsset` exist. `FixedAsset` stores asset code, name, category text, purchase cost/date, useful life, residual value, and status. | This is enough for the current basic import and straight-line depreciation prototype. Normalize category references and extend the existing asset model if needed; do not create a second unlinked `FixedAsset` collection. |
+| Asset upload and depreciation | The fixed-asset upload validates a workbook and upserts records by asset code. The depreciation endpoint currently calculates straight-line annual depreciation from purchase cost, residual value, and useful life, grouped by the category text. It does not use `DepreciationConfiguration`. | Pick one authoritative depreciation source. If the configuration model is intended to drive calculations, connect it explicitly and preserve the applied configuration with each calculation. The current import does not preserve an import batch or row-level history. |
+| Cost file upload | The Upload Center holds Direct Cost and Indirect Cost selections in client state. Only the Fixed Asset workbook is sent to the backend for persistence. | The app needs persisted Direct and Indirect import/mapping data before uploaded inputs can reliably drive a calculation. Selecting a file is not equivalent to importing its rows. |
+| FLC calculations and reports | Data Analysis still uses sample employee direct costs and sample variable pools, with fixed-asset depreciation fetched from the API. `/api/flc/calculate` calculates a ratio; `/api/flc/versions` returns sample versions. CSV reports are assembled in the browser. | There is no persisted, versioned FLC calculation result in the current backend. Add a durable run/snapshot before treating the report archive or export as historical/auditable results. |
+
+### Application-level decision
+
+For the present prototype, **do not add duplicate Department, Team, Employee, Working Hours, or Fixed Asset models**. Reuse and strengthen the current ones. The material additions needed for an end-to-end FLC workflow are:
+
+1. **Cost import batches and normalized source rows** for Direct Cost, Indirect Cost, and Fixed Asset input, including company/period, source file and worksheet, upload status, row number, mapping status, and resolution history. The existing operational-expense unmatched-row design is a useful pattern.
+2. **Indirect cost pools and allocation configuration** for shared variable costs and any other non-employee-specific costs. Link the pool to the shared component/subcomponent taxonomy where available, and store the period and allocation basis used.
+3. **Versioned FLC calculation runs/results** containing the exact input references, working hours, allocation ratio, depreciation assumptions, per-employee cost breakdown, final per-hour/month results, status, and approval audit. A report month alone is not a sufficient version key.
+
+An FLC-specific component-to-allocation-rule mapping may also be required. The wider application's `isFullyLoadedCost` flags identify relevant master records, but do not by themselves say whether a cost is direct, variable, fixed depreciation, or administrative semi-variable, or how it should be allocated.
+
+Other additions are conditional:
+
+- Add or standardize company ownership only if this app is intended to be multi-company. The pasted `CompanyMaster` is not present in the current backend.
+- Extend the current asset records with assignment history, valuation history, and per-period depreciation records only if FLC needs those lifecycles, rather than only the current simple straight-line calculation.
+- Add monthly working-hour records only if monthly employee hours differ and are part of the reporting rule. Otherwise the existing employee/year record can remain the input source.
+
+## 10. Review of the sample-folder schema diagrams
+
+The sample folder contains [DC final.png](./sample/DC%20final.png) and [FA final.png](./sample/FA%20final.png). These are ERD images rather than executable schemas; the diagrams do not show every constraint or validation rule.
+
+### 10.1 Direct Cost ERD — `DC final.png`
+
+The diagram shows a Company owning Departments, Teams, Employees, Resource Categories/Items, Software Categories/Items, and Insurance Categories/Items. Employee-linked cost history includes salary, professional-certification reimbursement, holiday bonus, insurance premium, resource assignment, and software/insurance records. This is a useful coverage map for employee-specific direct costs and broadly matches the FLC snapshot.
+
+Suggestions:
+
+- The diagram's Department has no Revenue/Administrative/Reserve type. The current application's Department already has this required classification; retain that field in the authoritative Department model.
+- The diagram links both Team and Employee to Department. Keep this relationship only with a validation that an employee's team is in that same department.
+- Company, Department, Team, and Employee IDs are shown as integers, while the current Mongoose application and supplied FLC snapshots use ObjectIds. Select one identifier type for the actual MongoDB implementation and use it consistently for every reference. Do not treat an integer-looking diagram key as interchangeable with a Mongoose ObjectId.
+- Scope business-code uniqueness by company when codes may repeat between companies. The diagram does not communicate unique indexes or compound indexes.
+- Several item records are optionally linked to an employee. Define what happens when an item is not employee-specific: it should be assigned to a department/shared cost pool, not silently omitted or counted as employee direct cost.
+- Add explicit effective periods and currency/amount conventions where the diagram currently only shows a year or amount. Specify how recurring policies, subscriptions, reimbursements, and salary changes are included in a selected monthly or annual FLC period.
+- This ERD does not show the Indirect Cost pool/import model, workbook reconciliation, or an FLC calculation run/result. It should not be read as the complete FLC schema.
+
+### 10.2 Fixed Asset ERD — `FA final.png`
+
+The diagram shows `FixedAssetCategory` → `FixedAssetMaster` → `FixedAssetValue`, with a `DepreciationConfiguration` used by `FixedAssetDepreciation`. The depreciation record contains financial year, opening WDV, depreciation amount, accumulated depreciation, closing WDV, and calculation time. This is a useful outline for asset classification and depreciation history.
+
+Suggestions:
+
+- Keep the distinction between an **asset master/type** and an **asset register/instance** clear. A master such as “Laptop” can describe a type; an individual purchased laptop needs its own asset code, purchase date/cost, residual value, status, and possibly serial number. If `FixedAssetValue.assetId` points only to the type master, identical physical assets cannot be depreciated or disposed of independently.
+- The current app already has an individual `FixedAsset` record with asset code and purchase details. Reuse that as the register starting point, or explicitly migrate/split it into a type master plus register; do not keep both without a stable relationship and migration plan.
+- Link depreciation configuration to the relevant company and asset category/type, with effective dates and validated method/rate/life/residual rules. The image does not show enough ownership/category linkage to determine which configuration applies to an asset.
+- Add effective date range and currency to valuation history. A value alone does not explain when it applies or which currency it uses.
+- Store depreciation period start/end and the applied configuration/input snapshot. Enforce one valid result per asset and period/version, and define how recalculation or corrections are represented.
+- The current backend calculates depreciation directly from each asset's purchase fields and does not consult its configuration collection. The diagram and implementation therefore need one agreed source of truth for useful life, residual value, and depreciation method.
+- This diagram covers fixed assets only. It does not capture Direct/Indirect workbook import batches, cost mapping, administrative allocation, or final FLC employee results.
+
+## 11. Final answer: is another schema needed?
+
+**Yes, for a complete and persistent FLC workflow—but not for every area.**
+
+### Add
+
+- A period/company-scoped import batch and row-level source/mapping model (or an equivalent extension that preserves all three workbook sources and their reconciliation).
+- An indirect/shared-cost pool model with explicit component mapping and allocation basis.
+- A versioned FLC calculation snapshot and employee-level result data, including approval state and source references.
+
+### Reuse or extend instead of duplicating
+
+- Current `Department`, `Team`, and `Employee`; ensure department type and team consistency remain available.
+- Current `EmployeeWorkingHours`; tie it to the canonical employee and make the period monthly only if the business rule requires it.
+- Current `FixedAsset`/`AssetCategory` records for the basic workflow; extend them to support the agreed asset lifecycle and depreciation history.
+- Shared `Component`/`SubComponent` if these are actually present in the deployed application. They appear in the supplied wider-app snapshot but not in the current workspace backend.
+
+### Do not add yet
+
+- A second set of department, team, employee, or working-hours collections.
+- A second fixed-asset inventory disconnected from the current `FixedAsset` collection.
+- A duplicate cost-component taxonomy if the shared component masters can be used and extended with an FLC-specific allocation mapping.
+
+The sample ERDs are good starting diagrams for direct-cost inputs and fixed-asset depreciation, but they need the above consistency rules and do not yet depict the complete import-to-approved-FLC lifecycle.
